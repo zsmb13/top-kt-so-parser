@@ -2,10 +2,11 @@ import org.jsoup.Jsoup
 import org.jsoup.nodes.Document
 import org.jsoup.nodes.Element
 import java.net.URL
-import java.time.LocalDate
+
+private fun Element.hasChildTag(tagName: String) = children().any { it.tagName() == tagName }
 
 private fun Element.findAllTimeTitle(): Element? {
-    if (this.tagName() == "h3" && this.ownText() == "All Time") {
+    if (this.ownText() == "All Time" && parent().hasChildTag("table")) {
         return this
     } else {
         children().forEach { child ->
@@ -21,7 +22,7 @@ private fun Element.findAllTimeTitle(): Element? {
 data class ScoreEntry(val name: String, val score: Int)
 
 private fun Document.getScoreEntries(): List<ScoreEntry> {
-    val allTimeTitle = this.findAllTimeTitle() ?: throw IllegalStateException("No title found")
+    val allTimeTitle = this.findAllTimeTitle() ?: throw IllegalStateException("No title found in document $this")
 
     val table = allTimeTitle.parent().child(1)
     val tableBody = table.child(0)
@@ -35,18 +36,25 @@ private fun Document.getScoreEntries(): List<ScoreEntry> {
     }
 }
 
-fun LocalDate.format() = String.format("%04d%02d%02d", year, monthValue, dayOfMonth)
-
 fun main(args: Array<String>) {
-    val machine = WaybackMachine()
 
-    val now = LocalDate.now()
-    val archiveUrl = machine.getArchiveUrl("https://stackoverflow.com/tags/kotlin/topusers", now.format())
+    data class Archive(val date: String, val url: String)
 
-    println(archiveUrl)
+    URL("http://web.archive.org/cdx/search/cdx?url=https://stackoverflow.com/tags/kotlin/topusers")
+            .readText()
+            .lineSequence()
+            .filter { it.isNotBlank() }
+            .map { archiveStr ->
+                val split = archiveStr.split(' ')
+                Archive(date = split[1], url = "http://web.archive.org/web/${split[1]}/${split[2]}/")
+            }
+            .map { archive ->
+                println("Fetching URL ${archive.url}")
+                val document: Document = Jsoup.parse(URL(archive.url), 60 * 1000)
+                document.getScoreEntries()
+            }
+            .forEach {
+                println(it)
+            }
 
-    val document: Document = Jsoup.parse(URL(archiveUrl), 5000)
-    val scoreEntries = document.getScoreEntries()
-
-    println(scoreEntries)
 }
